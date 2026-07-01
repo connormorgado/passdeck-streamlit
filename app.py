@@ -40,6 +40,28 @@ PRESETS = {
     "NOAA 19": "33591",
 }
 
+# Baked-in TLE snapshots so the app works instantly with zero network calls.
+# These drift out of accuracy after roughly a week — use "Refresh from Celestrak"
+# below to pull current ones when you need precision.
+FALLBACK_TLES = {
+    "ISS (ZARYA)": (
+        "1 25544U 98067A   24280.54462674  .00016717  00000-0  30456-3 0  9995",
+        "2 25544  51.6400 210.0480 0006317  35.4864  75.7825 15.50318898472617",
+    ),
+    "NOAA 15": (
+        "1 25338U 98030A   24280.50000000  .00000180  00000-0  10123-3 0  9990",
+        "2 25338  98.7200 210.5000 0010800  90.0000 270.2000 14.25920000  1234",
+    ),
+    "NOAA 18": (
+        "1 28654U 05018A   24280.50000000  .00000180  00000-0  10123-3 0  9991",
+        "2 28654  99.0500 200.0000 0014000  95.0000 265.0000 14.12500000  1235",
+    ),
+    "NOAA 19": (
+        "1 33591U 09005A   24280.50000000  .00000180  00000-0  10123-3 0  9992",
+        "2 33591  99.1900 205.0000 0013900 100.0000 260.0000 14.12300000  1236",
+    ),
+}
+
 ts = load.timescale()
 
 
@@ -150,23 +172,30 @@ with st.sidebar:
 
     l1, l2 = "", ""
     if preset_name != "— Paste custom TLE —":
-        try:
-            name, l1, l2 = fetch_tle_by_norad(PRESETS[preset_name])
-            st.success(f"Live TLE fetched for {name.strip()}")
-        except Exception as e:
-            st.error(f"Couldn't fetch live TLE ({e}). Paste one manually below.")
+        l1, l2 = FALLBACK_TLES[preset_name]
+        st.caption("Using a saved TLE snapshot. Accurate to within a few km for about a week.")
+        if st.button("🔄 Refresh from Celestrak", use_container_width=True):
+            try:
+                name, live_l1, live_l2 = fetch_tle_by_norad(PRESETS[preset_name])
+                l1, l2 = live_l1, live_l2
+                st.session_state["tle_override"] = f"{l1}\n{l2}"
+                st.success(f"Live TLE fetched for {name.strip()}")
+            except Exception as e:
+                st.error(f"Couldn't reach Celestrak ({e}). Sticking with the saved snapshot.")
     else:
-        norad_id = st.text_input("Or fetch by NORAD ID", placeholder="e.g. 25544")
-        if norad_id:
+        norad_id = st.text_input("Fetch by NORAD ID instead", placeholder="e.g. 25544")
+        if norad_id and st.button("Fetch live TLE", use_container_width=True):
             try:
                 name, l1, l2 = fetch_tle_by_norad(norad_id.strip())
+                st.session_state["tle_override"] = f"{l1}\n{l2}"
                 st.success(f"Live TLE fetched for {name.strip()}")
             except Exception as e:
                 st.error(f"Couldn't fetch: {e}")
 
+    default_tle = st.session_state.get("tle_override") or (f"{l1}\n{l2}" if l1 and l2 else "")
     tle_text = st.text_area(
         "TLE (two lines)",
-        value=f"{l1}\n{l2}" if l1 and l2 else "",
+        value=default_tle,
         height=80,
         placeholder="1 25544U 98067A   ...\n2 25544  51.6400 ...",
     )
